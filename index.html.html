@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>👏 Detector de Aplausos</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0d0d1a; color: #eee;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    background: #13132a; border: 1px solid #1e1e3f;
+    border-radius: 20px; padding: 2rem; width: 460px;
+    max-width: 96vw; box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+  }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 1.75rem; }
+  .status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: #333; flex-shrink: 0; transition: background 0.3s; }
+  .dot.on { background: #1db954; box-shadow: 0 0 8px #1db95488; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .status-text { font-size: 14px; color: #999; }
+  .vol-bar { height: 5px; background: #1a1a35; border-radius: 3px; margin: 10px 0 18px; overflow: hidden; }
+  .vol-fill { height: 100%; background: linear-gradient(90deg, #1db954, #17a349); width: 0%; transition: width 0.04s; border-radius: 3px; }
+  .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 1.5rem; font-size: 13px; color: #777; }
+  .slider-row input[type=range] { flex: 1; accent-color: #1db954; }
+  .slider-val { min-width: 26px; font-weight: 700; color: #eee; font-size: 14px; }
+  .claps-row { display: flex; gap: 10px; align-items: center; margin-bottom: 1.75rem; }
+  .clap-circle {
+    width: 40px; height: 40px; border-radius: 50%; border: 2px solid #2a2a4a;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; transition: all 0.15s;
+  }
+  .clap-circle.active { background: rgba(29,185,84,0.2); border-color: #1db954; transform: scale(1.15); }
+  .claps-label { font-size: 12px; color: #555; line-height: 1.5; }
+  .section-title { font-size: 12px; color: #555; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 10px; }
+  .link-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    background: #0d0d1a; border: 1px solid #1e1e3f; border-radius: 10px; padding: 10px 12px; transition: opacity 0.2s;
+  }
+  .link-row.disabled { opacity: 0.35; }
+  .link-emoji { font-size: 20px; flex-shrink: 0; }
+  .link-name { font-size: 13px; color: #ccc; min-width: 80px; font-weight: 600; }
+  .link-url { flex: 1; font-size: 11px; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .link-toggle {
+    width: 38px; height: 22px; border-radius: 11px; background: #1db954;
+    border: none; cursor: pointer; position: relative; flex-shrink: 0; transition: background 0.2s;
+  }
+  .link-toggle::after {
+    content: ''; position: absolute; width: 16px; height: 16px;
+    border-radius: 50%; background: white; top: 3px; left: 19px; transition: left 0.2s;
+  }
+  .link-toggle.off { background: #2a2a4a; }
+  .link-toggle.off::after { left: 3px; }
+  .btns { display: flex; gap: 10px; margin-top: 1.5rem; flex-wrap: wrap; }
+  .btn {
+    padding: 10px 18px; border-radius: 10px; border: none;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-green { background: #1db954; color: #000; }
+  .btn-green:hover { background: #1ed760; }
+  .btn-red { background: #c0392b; color: white; display: none; }
+  .btn-red:hover { background: #e74c3c; }
+  .btn-blue { background: #1a3a6a; color: #7ab3ff; border: 1px solid #2a4a8a; }
+  .btn-blue:hover { background: #1e4a8a; }
+
+  /* PANEL DE APERTURA MANUAL - clave para el fix */
+  .manual-panel {
+    margin-top: 1.25rem; background: #0a0a1a;
+    border: 1px solid #1e2e4f; border-radius: 12px; padding: 14px;
+    display: none;
+  }
+  .manual-panel-title { font-size: 12px; color: #7ab3ff; margin-bottom: 10px; font-weight: 600; }
+  .manual-links { display: flex; flex-direction: column; gap: 6px; }
+  .manual-link {
+    display: flex; align-items: center; gap: 8px;
+    background: #13132a; border: 1px solid #1e1e3f;
+    border-radius: 8px; padding: 8px 12px; text-decoration: none;
+    color: #ccc; font-size: 13px; transition: border-color 0.2s;
+  }
+  .manual-link:hover { border-color: #1db954; color: #fff; }
+  .manual-link .check { margin-left: auto; font-size: 16px; opacity: 0; transition: opacity 0.3s; }
+  .manual-link.opened .check { opacity: 1; }
+
+  .info-box {
+    margin-top: 1rem; font-size: 12px; color: #666;
+    background: #0a0a1a; border: 1px solid #2a1a00;
+    border-radius: 10px; padding: 10px 14px; line-height: 1.6;
+  }
+  .info-box strong { color: #f39c12; }
+  .log { margin-top: 12px; font-size: 12px; color: #444; min-height: 18px; text-align: center; }
+  .install-bar {
+    margin-top: 1.5rem; padding-top: 1.25rem;
+    border-top: 1px solid #1a1a35; font-size: 12px; color: #444; line-height: 1.7;
+  }
+  .install-bar strong { color: #666; }
+  .install-bar code { background: #1a1a35; padding: 1px 5px; border-radius: 4px; color: #1db954; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>👏 Detector de Aplausos</h1>
+  <p class="subtitle">Dos aplausos → se abren todas tus pestañas al instante</p>
+
+  <div class="status-row">
+    <div class="dot" id="dot"></div>
+    <span class="status-text" id="status-text">Micrófono desactivado</span>
+  </div>
+
+  <div class="vol-bar"><div class="vol-fill" id="vol-fill"></div></div>
+
+  <div class="slider-row">
+    <span>Sensibilidad</span>
+    <input type="range" min="10" max="80" value="35" id="threshold">
+    <span class="slider-val" id="thresh-val">35</span>
+  </div>
+
+  <div class="claps-row">
+    <div class="clap-circle" id="c1">👏</div>
+    <div class="clap-circle" id="c2">👏</div>
+    <span class="claps-label">Dos aplausos seguidos<br>(menos de 1 seg entre ellos)</span>
+  </div>
+
+  <div class="section-title">Pestañas que se abrirán</div>
+  <div id="links-container">
+    <div class="link-row" data-href="https://open.spotify.com/intl-es/track/3BovdzfaX4jb5KFQwoPfAw?si=a3a4190a168d4971&autoplay=true" data-name="🎵 Spotify">
+      <span class="link-emoji">🎵</span>
+      <span class="link-name">Spotify</span>
+      <span class="link-url">open.spotify.com · tu canción</span>
+      <button class="link-toggle" onclick="toggleLink(this)"></button>
+    </div>
+    <div class="link-row" data-href="https://www.tradingview.com/chart/71azOgWc/?symbol=OANDA%3AEURUSD" data-name="📈 TradingView">
+      <span class="link-emoji">📈</span>
+      <span class="link-name">TradingView</span>
+      <span class="link-url">tradingview.com · EUR/USD</span>
+      <button class="link-toggle" onclick="toggleLink(this)"></button>
+    </div>
+    <div class="link-row" data-href="https://lovable.dev/projects/352bbf31-dd51-416a-9f7f-adae1a1008a4" data-name="💜 Lovable">
+      <span class="link-emoji">💜</span>
+      <span class="link-name">Lovable</span>
+      <span class="link-url">lovable.dev · tu proyecto</span>
+      <button class="link-toggle" onclick="toggleLink(this)"></button>
+    </div>
+    <div class="link-row" data-href="https://www.notion.so/TO-DO-LIST-353e2c068cab80638c44f8aa42d15fd2" data-name="📋 Notion">
+      <span class="link-emoji">📋</span>
+      <span class="link-name">Notion</span>
+      <span class="link-url">notion.so · TO-DO LIST</span>
+      <button class="link-toggle" onclick="toggleLink(this)"></button>
+    </div>
+    <div class="link-row" data-href="https://claude.ai/new" data-name="🤖 Claude">
+      <span class="link-emoji">🤖</span>
+      <span class="link-name">Claude</span>
+      <span class="link-url">claude.ai · nueva conversación</span>
+      <button class="link-toggle" onclick="toggleLink(this)"></button>
+    </div>
+  </div>
+
+  <div class="btns">
+    <button class="btn btn-green" id="btn-start" onclick="startListening()">🎤 Activar detector</button>
+    <button class="btn btn-red" id="btn-stop" onclick="stopListening()">⏹ Desactivar</button>
+    <button class="btn btn-blue" onclick="openAllLinks(true)">🔗 Abrir todas ahora</button>
+  </div>
+
+  <!-- PANEL MANUAL: aparece cuando Chrome bloquea los popups automáticos -->
+  <div class="manual-panel" id="manual-panel">
+    <div class="manual-panel-title">👆 Haz clic en cada enlace para abrirlo (Chrome bloqueó la apertura automática)</div>
+    <div class="manual-links" id="manual-links"></div>
+  </div>
+
+  <div class="info-box" id="info-box" style="display:none">
+    ⚠️ <strong>Primera vez:</strong> Chrome puede pedir confirmar ventanas emergentes. Busca arriba a la derecha el aviso y haz clic en <strong>"Permitir siempre"</strong>. Después de eso, funcionará automáticamente con los aplausos.
+  </div>
+
+  <div class="log" id="log"></div>
+
+  <div class="install-bar">
+    💡 <strong>Convertir en app:</strong> Sube el archivo a GitHub Pages y luego en Chrome
+    <code>⋮</code> → <code>Guardar y compartir</code> → <code>Crear acceso directo</code> → <code>Abrir en ventana</code>
+  </div>
+</div>
+
+<script>
+let audioCtx, analyser, source, stream, rafId;
+let isListening = false;
+let lastClapTime = 0, clapCount = 0, clapTimer = null;
+
+document.getElementById('threshold').oninput = function() {
+  document.getElementById('thresh-val').textContent = this.value;
+};
+
+function log(msg) { document.getElementById('log').textContent = msg; }
+
+function toggleLink(btn) {
+  btn.classList.toggle('off');
+  btn.closest('.link-row').classList.toggle('disabled');
+  rebuildManualPanel();
+}
+
+async function startListening() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    source = audioCtx.createMediaStreamSource(stream);
+    source.connect(analyser);
+    isListening = true;
+    document.getElementById('dot').className = 'dot on';
+    document.getElementById('status-text').textContent = 'Escuchando... da dos aplausos';
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-stop').style.display = 'inline-flex';
+    log('✅ Micrófono activo');
+    detectLoop();
+  } catch(e) {
+    log('❌ Error: ' + (e.message || 'No se pudo acceder al micrófono'));
+  }
+}
+
+function stopListening() {
+  isListening = false;
+  if(rafId) cancelAnimationFrame(rafId);
+  if(stream) stream.getTracks().forEach(t => t.stop());
+  if(audioCtx) audioCtx.close();
+  document.getElementById('dot').className = 'dot';
+  document.getElementById('status-text').textContent = 'Micrófono desactivado';
+  document.getElementById('btn-start').style.display = 'inline-flex';
+  document.getElementById('btn-stop').style.display = 'none';
+  document.getElementById('vol-fill').style.width = '0%';
+  log('Detector parado.');
+}
+
+function detectLoop() {
+  if(!isListening) return;
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteTimeDomainData(data);
+  let max = 0;
+  for(let i = 0; i < data.length; i++) max = Math.max(max, Math.abs(data[i] - 128));
+  const vol = Math.round((max / 128) * 100);
+  document.getElementById('vol-fill').style.width = Math.min(vol * 2, 100) + '%';
+
+  const now = Date.now();
+  const thresh = parseInt(document.getElementById('threshold').value);
+
+  if(vol > thresh && (now - lastClapTime) > 150) {
+    lastClapTime = now;
+    clapCount++;
+    flashClap(clapCount);
+    clearTimeout(clapTimer);
+    if(clapCount >= 2) {
+      clapCount = 0;
+      log('👏👏 Abriendo pestañas...');
+      openAllLinks(false);
+    } else {
+      clapTimer = setTimeout(() => { clapCount = 0; resetClaps(); }, 1000);
+    }
+  }
+  rafId = requestAnimationFrame(detectLoop);
+}
+
+function flashClap(n) {
+  const el = document.getElementById('c' + Math.min(n, 2));
+  if(el) { el.classList.add('active'); setTimeout(() => el.classList.remove('active'), 500); }
+}
+
+function resetClaps() {
+  document.getElementById('c1').classList.remove('active');
+  document.getElementById('c2').classList.remove('active');
+}
+
+function getActiveLinks() {
+  return Array.from(document.querySelectorAll('#links-container .link-row:not(.disabled)'))
+    .map(row => ({ href: row.getAttribute('data-href'), name: row.getAttribute('data-name') }))
+    .filter(l => l.href);
+}
+
+// Abre todos los enlaces activos
+// Si isManual=true (botón pulsado por usuario) → window.open funciona sin restricción
+// Si isManual=false (desde aplausos) → intenta con <a>.click(), y si Chrome los bloquea muestra panel manual
+function openAllLinks(isManual) {
+  document.getElementById('info-box').style.display = 'block';
+  const links = getActiveLinks();
+
+  if(isManual) {
+    // Clic directo del usuario: window.open está permitido sin límite
+    links.forEach((l, i) => {
+      setTimeout(() => {
+        const w = window.open(l.href, '_blank');
+        if(!w) showManualPanel(links);
+      }, i * 600);
+    });
+  } else {
+    // Desde aplausos: abrimos todas a la vez usando <a>.click()
+    // Chrome solo permite 1 popup automático por evento, así que mostramos el panel manual para el resto
+    let opened = 0;
+    links.forEach((l, i) => {
+      setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = l.href;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        opened++;
+        if(opened === links.length) {
+          // Mostramos siempre el panel manual como respaldo por si Chrome bloqueó alguna
+          setTimeout(() => showManualPanel(links), 800);
+        }
+      }, i * 300);
+    });
+  }
+
+  setTimeout(resetClaps, 900);
+}
+
+function showManualPanel(links) {
+  const panel = document.getElementById('manual-panel');
+  const container = document.getElementById('manual-links');
+  container.innerHTML = '';
+  links.forEach(l => {
+    const a = document.createElement('a');
+    a.href = l.href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.className = 'manual-link';
+    a.innerHTML = `${l.name} <span class="check">✅</span>`;
+    a.addEventListener('click', () => { setTimeout(() => a.classList.add('opened'), 300); });
+    container.appendChild(a);
+  });
+  panel.style.display = 'block';
+}
+
+function rebuildManualPanel() {
+  if(document.getElementById('manual-panel').style.display !== 'none') {
+    showManualPanel(getActiveLinks());
+  }
+}
+</script>
+</body>
+</html>
